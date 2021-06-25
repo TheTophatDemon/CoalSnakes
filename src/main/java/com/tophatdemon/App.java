@@ -97,7 +97,8 @@ public class App
 
         //GL init
         GL.createCapabilities();
-        //glEnable(GL_CULL_FACE);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT);
         glEnable(GL_DEPTH_TEST);
 
         Shader testShader = Shader.LoadFromFile("/res/shaders/default.vert", "/res/shaders/default.frag");
@@ -117,10 +118,14 @@ public class App
         testMesh.setIndices(
             0, 1, 2, 0, 2, 3
         );
-        Terrain terrain = new Terrain(64, 64, 64, 4.0f);
+        Terrain terrain = new Terrain(64, 64, 64, 2.0f);
         terrain.SetPerlinNoiseWeights(0.1f);
-        
+        // terrain.SetPerlinNoiseWeights(1.0f);
+        // terrain.SetDebugWeights();
+
         Matrix4f projection = new Matrix4f().setPerspective(FOV, ASPECT_RATIO, CAMERA_NEAR, CAMERA_FAR);
+        Vector3f ambientLight = new Vector3f(0.25f, 0.25f, 0.25f);
+        Vector3f sunDirection = new Vector3f(1.0f, 0.5f, 1.0f).normalize();
         
         glClearColor(0.0f, 0.0f, 0.5f, 0.0f);
         
@@ -175,15 +180,17 @@ public class App
 
             Matrix4f view = new Matrix4f().translate(cameraPosition).rotate(rotMatrix.getNormalizedRotation(new Quaternionf())).invert();
 
-            Matrix4f modelView = new Matrix4f()
-                .mul(view)
+            Matrix4f model = new Matrix4f()
                 .translate(0.0f, 0.0f, -5.0f)
                 .rotate(globalTime, 0.0f, 1.0f, 0.0f);
 
             testShader.bind();
             try {
-                testShader.setUniform(Shader.Uniform.MODELVIEW_MATRIX, modelView);
+                testShader.setUniform(Shader.Uniform.VIEW_MATRIX, view);
+                testShader.setUniform(Shader.Uniform.MODEL_MATRIX, model);
                 testShader.setUniform(Shader.Uniform.PROJECTION_MATRIX, projection);
+                testShader.setUniform(Shader.Uniform.AMBIENT_LIGHT, ambientLight);
+                testShader.setUniform(Shader.Uniform.SUN_DIRECTION, sunDirection);
                 //testShader.setUniform(Shader.Uniform.TIME, globalTime);
             } catch (Exception e) {
                 e.printStackTrace(System.err);
@@ -193,15 +200,13 @@ public class App
             testMesh.draw();
             testMesh.unbind();
 
-            modelView = new Matrix4f()
-                .mul(view)
-                .translate(0.0f, 0.0f, 0.0f)
-                .rotate(globalTime, 0.0f, 1.0f, 0.0f);
-                // .translate(0.0f, 0.0f, -100.0f)
-                // .rotate((float)PI / 2.0f, 1.0f, 0.0f, 0.0f);
+            model = new Matrix4f();
 
             try {
-                testShader.setUniform(Shader.Uniform.MODELVIEW_MATRIX, modelView);
+                testShader.setUniform(Shader.Uniform.VIEW_MATRIX, view);
+                testShader.setUniform(Shader.Uniform.MODEL_MATRIX, model);
+                testShader.setUniform(Shader.Uniform.AMBIENT_LIGHT, ambientLight);
+                testShader.setUniform(Shader.Uniform.SUN_DIRECTION, sunDirection);
             } catch (Exception e) {
                 e.printStackTrace(System.err);
             }

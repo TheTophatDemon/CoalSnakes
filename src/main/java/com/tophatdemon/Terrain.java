@@ -3,6 +3,8 @@ package com.tophatdemon;
 import java.util.Random;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.EnumMap;
 import org.joml.SimplexNoise;
 import org.joml.Vector3f;
 import org.joml.Vector3i;
@@ -62,63 +64,118 @@ public class Terrain {
         meshRegen = true;
     }
 
+    public void SetDebugWeights() {
+        for (int z = 0; z < gridRows + 1; ++z) {
+            for (int y = 0; y < gridLayers + 1; ++y) {
+                for (int x = 0; x < gridCols + 1; ++x) {
+                    gridWeights[x][y][z] = (x % 2 == 0 && y % 2 == 0 && z % 2 == 0) ? 1.0f : 0.0f;
+                }
+            }
+        }
+    }
+
     public void SetIsoLevel(float isoLevel) {
-        this.isoLevel = isoLevel;
+        this.isoLevel = Math.max(0.0f, Math.min(1.0f, isoLevel));
         meshRegen = true;
     }
 
     private static class Vertex {
         Vector3f position;
         Vector3f color;
+        Vector3f normal;
+        int multiplicity = 1; //Number of triangles that contain this vertex
+        public Vertex(Vector3f pos, Vector3f col, Vector3f norm) {
+            position = pos; color = col; normal = norm;
+        }
         public Vertex(Vector3f pos, Vector3f col) {
-            position = pos; color = col;
+            this(pos, col, new Vector3f(0.0f, 0.0f, 0.0f));
         }
     }
 
     private void generateMesh() {
         Vector3f offset = new Vector3f(
-            -(gridCols * gridSpacing) / 2.0f,
-            -(gridLayers * gridSpacing) / 2.0f,
-            -(gridRows * gridSpacing) / 2.0f
+            -((gridCols + 1) * gridSpacing) / 2.0f,
+            -((gridLayers + 1) * gridSpacing) / 2.0f,
+            -((gridRows + 1) * gridSpacing) / 2.0f
         );
 
         List<Vertex> verts = new ArrayList<>();
         List<Integer> indices = new ArrayList<>();
 
+        //TODO: Make smoother normals
+
+        Random random = new Random(System.currentTimeMillis());
+
+        Map<MarchingCubes.Edge, Integer> edgeIndices = new EnumMap<>(MarchingCubes.Edge.class);
         for (int z = 0; z < gridRows; ++z) {
             for (int y = 0; y < gridLayers; ++y) {
                 for (int x = 0; x < gridCols; ++x) {
                     int mask = 0;
-                    if (gridWeights[x+0][y+0][z+1] < isoLevel) mask |= 1 << 0;
-                    if (gridWeights[x+1][y+0][z+1] < isoLevel) mask |= 1 << 1;
-                    if (gridWeights[x+1][y+0][z+0] < isoLevel) mask |= 1 << 2;
-                    if (gridWeights[x+0][y+0][z+0] < isoLevel) mask |= 1 << 3;
-                    if (gridWeights[x+0][y+1][z+1] < isoLevel) mask |= 1 << 4;
-                    if (gridWeights[x+1][y+1][z+1] < isoLevel) mask |= 1 << 5;
-                    if (gridWeights[x+1][y+1][z+0] < isoLevel) mask |= 1 << 6;
-                    if (gridWeights[x+0][y+1][z+0] < isoLevel) mask |= 1 << 7;
+                    if (gridWeights[x+0][y+0][z+0] < isoLevel) mask |= 1 << 0;
+                    if (gridWeights[x+1][y+0][z+0] < isoLevel) mask |= 1 << 1;
+                    if (gridWeights[x+1][y+0][z+1] < isoLevel) mask |= 1 << 2;
+                    if (gridWeights[x+0][y+0][z+1] < isoLevel) mask |= 1 << 3;
+                    if (gridWeights[x+0][y+1][z+0] < isoLevel) mask |= 1 << 4;
+                    if (gridWeights[x+1][y+1][z+0] < isoLevel) mask |= 1 << 5;
+                    if (gridWeights[x+1][y+1][z+1] < isoLevel) mask |= 1 << 6;
+                    if (gridWeights[x+0][y+1][z+1] < isoLevel) mask |= 1 << 7;
 
-                    float colorGrade = gridWeights[x][y][z];
-                    Vector3f color = new Vector3f(colorGrade / 2.0f, colorGrade / 3.0f, colorGrade / 8.0f);
+                    // Vector3f color = new Vector3f(random.nextFloat(), random.nextFloat(), random.nextFloat());
 
-                    //TODO: Prevent the algorithm from making duplicate vertices
+                    edgeIndices.clear();
+                    
+                    //Compute vertex positions and colors
                     for (MarchingCubes.Edge e : MarchingCubes.SHAPES[mask]) {
-                        float isoVal0 = gridWeights[x+e.offset.x][y+e.offset.y][z+e.offset.z];
-                        float isoVal1 = gridWeights[x+e.offset.x+e.direction.x][y+e.offset.y+e.direction.y][z+e.offset.z+e.direction.z];
-                        Vector3f pos = new Vector3f(x, y, z).add(e.GetInterpolatedPosition(isoLevel, isoVal0, isoVal1));
-                        indices.add(verts.size());
-                        verts.add(new Vertex(pos.mul(gridSpacing).sub(offset), color));
+                        if (!edgeIndices.containsKey(e)) {
+                            // System.out.println(e);
+                            float isoVal0 = gridWeights[x+e.offset.x][y+e.offset.y][z+e.offset.z];
+                            float isoVal1 = gridWeights[x+e.offset.x+e.direction.x][y+e.offset.y+e.direction.y][z+e.offset.z+e.direction.z];
+                            Vector3f interp_ofs = e.GetInterpolatedPosition(isoLevel, isoVal0, isoVal1);
+                            Vector3f pos = new Vector3f(x, y, z).add(interp_ofs);
+                            edgeIndices.put(e, verts.size()); //Associate this vertex's index to the edge type
+
+                            Vector3f color = new Vector3f(0.5f, 0.25f, 0.1f);
+
+                            verts.add(new Vertex(pos.mul(gridSpacing).add(offset), color));
+                        } else {
+                            verts.get(edgeIndices.get(e)).multiplicity++;
+                        }
                     }
+
+                    //Calculate normals for each triangle
+                    for (int i = 0; i < MarchingCubes.SHAPES[mask].length; i += 3) {
+                        Vertex v0 = verts.get(edgeIndices.get(MarchingCubes.SHAPES[mask][i]));
+                        Vertex v1 = verts.get(edgeIndices.get(MarchingCubes.SHAPES[mask][i+1]));
+                        Vertex v2 = verts.get(edgeIndices.get(MarchingCubes.SHAPES[mask][i+2]));
+                        Vector3f e0 = new Vector3f(v1.position).sub(v0.position);
+                        Vector3f e1 = new Vector3f(v2.position).sub(v0.position);
+                        Vector3f normal = e0.cross(e1);
+                        v0.normal.add(new Vector3f(normal).div(v0.multiplicity));
+                        v1.normal.add(new Vector3f(normal).div(v1.multiplicity));
+                        v2.normal.add(new Vector3f(normal).div(v2.multiplicity));
+                    }
+
+                    //Add the integer index of the vertex along each unique edge
+                    for (MarchingCubes.Edge e : MarchingCubes.SHAPES[mask]) {
+                        // System.out.println(edgeIndices.get(e));
+                        indices.add(edgeIndices.get(e));
+                    }
+
+                    // System.out.println("End cube");
+
                 }
             }
         }
 
+
+        //TODO: Replace this code with a more convenient set of methods in Mesh
         //Convert the data into primitive arrays to be passed into OpenGL
         float[] pData = new float[verts.size() * 3];
         int pNext = 0;
         float[] cData = new float[verts.size() * 3];
         int cNext = 0;
-        int[] iData = new int[verts.size() * 36];
+        float[] nData = new float[verts.size() * 3];
+        int nNext = 0;
         for (int i = 0; i < verts.size(); ++i){
             Vertex v = verts.get(i);
             pData[pNext++] = v.position.x;
@@ -127,10 +184,19 @@ public class Terrain {
             cData[cNext++] = v.color.x;
             cData[cNext++] = v.color.y;
             cData[cNext++] = v.color.z;
+            nData[nNext++] = v.normal.x;
+            nData[nNext++] = v.normal.y;
+            nData[nNext++] = v.normal.z;
+        }
+        int[] iData = new int[indices.size()];
+        int iNext = 0;
+        for (int i = 0; i < indices.size(); ++i) {
+            iData[iNext++] = indices.get(i);
         }
 
         mesh.setVertexPositions(pData);
         mesh.setColors(cData);
+        mesh.setNormals(nData);
         mesh.setIndices(iData);
     }
 }

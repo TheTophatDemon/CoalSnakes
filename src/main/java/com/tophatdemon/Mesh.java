@@ -9,11 +9,13 @@ import static org.lwjgl.opengl.GL33.*;
 public class Mesh implements AutoCloseable {
     protected static final int ATTRIBUTE_INDEX_POS = 0;
     protected static final int ATTRIBUTE_INDEX_COLOR = 1;
+    protected static final int ATTRIBUTE_INDEX_NORMAL = 2;
 
     protected int vertexArrayObject;
 
     protected int positionBuffer;
     protected int colorBuffer;
+    protected int normalBuffer;
     protected int indexBuffer;
 
     protected int numIndices;
@@ -37,6 +39,14 @@ public class Mesh implements AutoCloseable {
             --numVertexBuffers;
         }
         colorBuffer = generateFloatVBO(ATTRIBUTE_INDEX_COLOR, 3, cols);
+    }
+
+    public void setNormals(float ...norms) {
+        if (normalBuffer != 0) {
+            glDeleteBuffers(normalBuffer);
+            --numVertexBuffers;
+        }
+        normalBuffer = generateFloatVBO(ATTRIBUTE_INDEX_NORMAL, 3, norms);
     }
 
     private int generateFloatVBO(int attrIdx, int attrSize, float ...data) {
@@ -92,6 +102,7 @@ public class Mesh implements AutoCloseable {
         if (vertexArrayObject > 0) glDeleteVertexArrays(vertexArrayObject);
         if (positionBuffer > 0) glDeleteBuffers(positionBuffer);
         if (colorBuffer > 0) glDeleteBuffers(colorBuffer);
+        if (normalBuffer > 0) glDeleteBuffers(normalBuffer);
         if (indexBuffer > 0) glDeleteBuffers(indexBuffer);
     }
 }

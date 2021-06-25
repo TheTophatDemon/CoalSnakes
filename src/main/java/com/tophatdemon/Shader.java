@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.HashMap;
 
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.lwjgl.system.MemoryStack;
 
 import java.nio.FloatBuffer;
@@ -34,9 +35,14 @@ public class Shader implements AutoCloseable {
     """;
 
     public static enum Uniform {
+        MODEL_MATRIX("uModel"),
+        VIEW_MATRIX("uView"),
         MODELVIEW_MATRIX("uModelView"),
         PROJECTION_MATRIX("uProjection"),
-        TIME("uTime");
+        TIME("uTime"),
+        AMBIENT_LIGHT("uAmbientLight"),
+        SUN_DIRECTION("uSunDirection"),
+        ;
         
         private String key;
         private Uniform(String key) {
@@ -130,6 +136,9 @@ public class Shader implements AutoCloseable {
             val.get(matf);
             glUniformMatrix4fv(getUniformLoc(key), false, matf);
         }
+    }
+    public void setUniform(Uniform key, Vector3f val) throws Exception {
+        glUniform3f(getUniformLoc(key), val.x, val.y, val.z);
     }
 
     @Override

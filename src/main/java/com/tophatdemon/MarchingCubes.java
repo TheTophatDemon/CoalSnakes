@@ -33,8 +33,10 @@ class MarchingCubes {
          * @param isoVal0 The isovalue of the first node
          * @param isoVal1 The isovalue of the second node
         **/
-         public Vector3f GetInterpolatedPosition(float isoLevel, float isoVal0, float isoVal1) {
-            return new Vector3f(direction.x, direction.y, direction.z).mul(isoLevel - isoVal0).div(isoVal1 - isoVal0);
+        public Vector3f GetInterpolatedPosition(float isoLevel, float isoVal0, float isoVal1) {
+            // return new Vector3f(offset.x + (direction.x * 0.5f), offset.y + (direction.y * 0.5f), offset.z + (direction.z * 0.5f));
+            float factor = (isoLevel - isoVal0) / (isoVal1 - isoVal0);
+            return new Vector3f(offset.x, offset.y, offset.z).add(new Vector3f(direction.x, direction.y, direction.z).mul(factor));
         }
     }
 
