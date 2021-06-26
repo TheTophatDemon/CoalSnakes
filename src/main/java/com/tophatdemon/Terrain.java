@@ -9,6 +9,8 @@ import org.joml.SimplexNoise;
 import org.joml.Vector3f;
 import org.joml.Vector3i;
 
+import com.tophatdemon.MarchingCubes.Edge;
+
 public class Terrain {
     protected Mesh mesh = new Mesh();
     protected int gridCols;
@@ -51,13 +53,17 @@ public class Terrain {
         meshRegen = true;
     }
 
-    public void SetPerlinNoiseWeights(float scale) {
+    public void SetPerlinNoiseWeights(float scale, boolean border) {
         Random random = new Random(System.nanoTime());
         float offset = random.nextFloat() * 100.0f;
         for (int z = 0; z < gridRows + 1; ++z) {
             for (int y = 0; y < gridLayers + 1; ++y) {
                 for (int x = 0; x < gridCols + 1; ++x) {
-                    gridWeights[x][y][z] = (SimplexNoise.noise((x + offset) * scale, (y + offset) * scale, (z + offset) * scale) + 1.0f) / 2.0f;
+                    if (border && (z == 0 || x == 0 || y == 0 || z == gridRows || y == gridLayers || x == gridCols)) {
+                        gridWeights[x][y][z] = 1.0f;
+                    } else {
+                        gridWeights[x][y][z] = (SimplexNoise.noise((x + offset) * scale, (y + offset) * scale, (z + offset) * scale) + 1.0f) / 2.0f;
+                    }
                 }
             }
         }
@@ -80,19 +86,22 @@ public class Terrain {
     }
 
     private static class Vertex {
+        Vector3i gridPosition;
         Vector3f position;
         Vector3f color;
         Vector3f normal;
         int multiplicity = 1; //Number of triangles that contain this vertex
-        public Vertex(Vector3f pos, Vector3f col, Vector3f norm) {
-            position = pos; color = col; normal = norm;
+        public Vertex(Vector3i gridPos, Vector3f pos, Vector3f col, Vector3f norm) {
+            gridPosition = gridPos; position = pos; color = col; normal = norm;
         }
-        public Vertex(Vector3f pos, Vector3f col) {
-            this(pos, col, new Vector3f(0.0f, 0.0f, 0.0f));
+        public Vertex(Vector3i gridPos, Vector3f pos, Vector3f col) {
+            this(gridPos, pos, col, new Vector3f(0.0f, 0.0f, 0.0f));
         }
     }
 
     private void generateMesh() {
+        long timerStart = System.currentTimeMillis();
+
         Vector3f offset = new Vector3f(
             -((gridCols + 1) * gridSpacing) / 2.0f,
             -((gridLayers + 1) * gridSpacing) / 2.0f,
@@ -106,7 +115,7 @@ public class Terrain {
 
         Random random = new Random(System.currentTimeMillis());
 
-        Map<MarchingCubes.Edge, Integer> edgeIndices = new EnumMap<>(MarchingCubes.Edge.class);
+        Map<Edge, Integer> edgeIndices = new EnumMap<>(Edge.class);
         for (int z = 0; z < gridRows; ++z) {
             for (int y = 0; y < gridLayers; ++y) {
                 for (int x = 0; x < gridCols; ++x) {
@@ -120,14 +129,10 @@ public class Terrain {
                     if (gridWeights[x+1][y+1][z+1] < isoLevel) mask |= 1 << 6;
                     if (gridWeights[x+0][y+1][z+1] < isoLevel) mask |= 1 << 7;
 
-                    // Vector3f color = new Vector3f(random.nextFloat(), random.nextFloat(), random.nextFloat());
-
                     edgeIndices.clear();
-                    
-                    //Compute vertex positions and colors
-                    for (MarchingCubes.Edge e : MarchingCubes.SHAPES[mask]) {
+                    for (int i = 0; i < MarchingCubes.SHAPES[mask].length; ++i) {
+                        Edge e = MarchingCubes.SHAPES[mask][i];
                         if (!edgeIndices.containsKey(e)) {
-                            // System.out.println(e);
                             float isoVal0 = gridWeights[x+e.offset.x][y+e.offset.y][z+e.offset.z];
                             float isoVal1 = gridWeights[x+e.offset.x+e.direction.x][y+e.offset.y+e.direction.y][z+e.offset.z+e.direction.z];
                             Vector3f interp_ofs = e.GetInterpolatedPosition(isoLevel, isoVal0, isoVal1);
@@ -135,34 +140,25 @@ public class Terrain {
                             edgeIndices.put(e, verts.size()); //Associate this vertex's index to the edge type
 
                             Vector3f color = new Vector3f(0.5f, 0.25f, 0.1f);
-
-                            verts.add(new Vertex(pos.mul(gridSpacing).add(offset), color));
+                            verts.add(new Vertex(new Vector3i(x, y, z), pos.mul(gridSpacing).add(offset), color));
                         } else {
                             verts.get(edgeIndices.get(e)).multiplicity++;
                         }
-                    }
-
-                    //Calculate normals for each triangle
-                    for (int i = 0; i < MarchingCubes.SHAPES[mask].length; i += 3) {
-                        Vertex v0 = verts.get(edgeIndices.get(MarchingCubes.SHAPES[mask][i]));
-                        Vertex v1 = verts.get(edgeIndices.get(MarchingCubes.SHAPES[mask][i+1]));
-                        Vertex v2 = verts.get(edgeIndices.get(MarchingCubes.SHAPES[mask][i+2]));
-                        Vector3f e0 = new Vector3f(v1.position).sub(v0.position);
-                        Vector3f e1 = new Vector3f(v2.position).sub(v0.position);
-                        Vector3f normal = e0.cross(e1);
-                        v0.normal.add(new Vector3f(normal).div(v0.multiplicity));
-                        v1.normal.add(new Vector3f(normal).div(v1.multiplicity));
-                        v2.normal.add(new Vector3f(normal).div(v2.multiplicity));
-                    }
-
-                    //Add the integer index of the vertex along each unique edge
-                    for (MarchingCubes.Edge e : MarchingCubes.SHAPES[mask]) {
-                        // System.out.println(edgeIndices.get(e));
                         indices.add(edgeIndices.get(e));
+
+                        //Calculate per-triangle normals
+                        if (i % 3 == 2) {
+                            Vertex v0 = verts.get(edgeIndices.get(MarchingCubes.SHAPES[mask][i-2]));
+                            Vertex v1 = verts.get(edgeIndices.get(MarchingCubes.SHAPES[mask][i-1]));
+                            Vertex v2 = verts.get(edgeIndices.get(MarchingCubes.SHAPES[mask][i]));
+                            Vector3f e0 = new Vector3f(v1.position).sub(v0.position);
+                            Vector3f e1 = new Vector3f(v2.position).sub(v0.position);
+                            Vector3f normal = e0.cross(e1);
+                            v0.normal.add(new Vector3f(normal).div(v0.multiplicity));
+                            v1.normal.add(new Vector3f(normal).div(v1.multiplicity));
+                            v2.normal.add(new Vector3f(normal).div(v2.multiplicity));
+                        }
                     }
-
-                    // System.out.println("End cube");
-
                 }
             }
         }
@@ -198,5 +194,8 @@ public class Terrain {
         mesh.setColors(cData);
         mesh.setNormals(nData);
         mesh.setIndices(iData);
+
+        long methodTime = System.currentTimeMillis() - timerStart;
+        System.out.printf("Chunk generation took %dms.", methodTime);
     }
 }
